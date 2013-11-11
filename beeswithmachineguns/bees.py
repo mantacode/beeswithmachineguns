@@ -71,27 +71,34 @@ def _delete_server_list():
     os.remove(STATE_FILENAME)
 
 def _get_pem_path(key):
-    return os.path.expanduser('~/.ssh/%s.pem' % key)
+    #return os.path.expanduser('~/.ssh/%s.pem' % key)
+    #print os.path.expanduser('~/.ssh/id_rsa.%s' % key)
+    return os.path.expanduser('~/.ssh/id_rsa.%s' % key)
 
 def _get_region(zone):
     return zone[:-1] # chop off the "d" in the "us-east-1d" to get the "Region"
     
 def _get_security_group_ids(connection, security_group_names, subnet):
+    #print "_get_security_group_ids"
+    #print security_group_names
     ids = []
     # Since we cannot get security groups in a vpc by name, we get all security groups and parse them by name later
     security_groups = connection.get_all_security_groups()
+    #print security_groups
 
     # Parse the name of each security group and add the id of any match to the group list
     for group in security_groups:
+        #print vars(group)
+        group.name
         for name in security_group_names:
             if group.name == name:
-                if subnet == None:
-                    if group.vpc_id == None:
-                        ids.append(group.id)
-                    elif group.vpc_id != None:
+                #print "group.name == name!"
+                if subnet != None:
+                    #print vars(group)
+                    if hasattr(group, 'vpcId') and group.vpcId != None:
                         ids.append(group.id)
 
-        return ids
+    return ids
 
 # Methods
 
@@ -120,15 +127,22 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet):
 
     print 'Attempting to call up %i bees.' % count
 
-    reservation = ec2_connection.run_instances(
-        image_id=image_id,
-        min_count=count,
-        max_count=count,
-        key_name=key_name,
-        security_groups=[group] if subnet is None else _get_security_group_ids(ec2_connection, [group], subnet),
-        instance_type=instance_type,
-        placement=zone,
-        subnet_id=subnet)
+    run_instances_args = {
+        'image_id': image_id,
+        'min_count': count,
+        'max_count': count,
+        'key_name': key_name,
+        'instance_type': instance_type,
+        'placement': zone,
+        'subnet_id': subnet,
+        #'security_groups': [group]
+    }
+    if subnet == None:
+        run_instances_args['security_groups'] = [group]
+    else:
+        run_instances_args['security_group_ids'] = _get_security_group_ids(ec2_connection, [group], subnet)
+
+    reservation = ec2_connection.run_instances(**run_instances_args)
 
     print 'Waiting for bees to load their machine guns...'
 
@@ -291,6 +305,7 @@ def _summarize_results(results, params, csv_filename):
     summarized_results['num_exception_bees'] = len(summarized_results['exception_bees'])
     summarized_results['num_complete_bees'] = len(summarized_results['complete_bees'])
 
+    #print summarized_results['complete_bees']
     complete_results = [r['complete_requests'] for r in summarized_results['complete_bees']]
     summarized_results['total_complete_requests'] = sum(complete_results)
 
@@ -300,6 +315,7 @@ def _summarize_results(results, params, csv_filename):
     complete_results = [r['requests_per_second'] for r in summarized_results['complete_bees']]
     summarized_results['mean_requests'] = sum(complete_results)
 
+    #print summarized_results
     complete_results = [r['ms_per_request'] for r in summarized_results['complete_bees']]
     summarized_results['mean_response'] = sum(complete_results) / summarized_results['num_complete_bees']
 
@@ -458,10 +474,9 @@ def attack(url, n, c, **options):
     params = []
 
     for i, instance in enumerate(instances):
-        params.append({
+        kwargs = {
             'i': i,
             'instance_id': instance.id,
-            'instance_name': instance.public_dns_name,
             'url': url,
             'concurrent_requests': connections_per_instance,
             'num_requests': requests_per_instance,
@@ -473,7 +488,12 @@ def attack(url, n, c, **options):
             'mime_type': options.get('mime_type', ''),
             'tpr': options.get('tpr'),
             'rps': options.get('rps')
-        })
+        }
+        if instance.subnet_id == None:
+            kwargs['instance_name'] = instance.public_dns_name
+        else:
+            kwargs['instance_name'] = instance.private_ip_address
+        params.append(kwargs)
 
     print 'Stinging URL so it will be cached for the attack.'
 
