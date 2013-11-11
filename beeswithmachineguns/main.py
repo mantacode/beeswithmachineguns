@@ -113,6 +113,9 @@ commands:
                             help='The upper bounds for time per request. If this option is passed and the target is below the value a 1 will be returned with the report details (default: None).')
     attack_group.add_option('-R', '--rps', metavar='RPS', nargs=1, action='store', dest='rps', default=None, type='float',
                             help='The lower bounds for request per second. If this option is passed and the target is above the value a 1 will be returned with the report details (default: None).')
+    attack_group.add_option('', '--dog-api-key', metavar='DOG_API_KEY', nargs=1, action='store', dest='dog_api_key', default=None, type='string', help='DataDog API Key')
+    attack_group.add_option('', '--dog-app-key', metavar='DOG_APP_KEY', nargs=1, action='store', dest='dog_app_key', default=None, type='string', help='DataDog Application Key')
+    attack_group.add_option('', '--dog-tags', metavar='DOG_TAGS', nargs=1, action='store', dest='dog_tags', default=None, type='string', help='comma separated list of datadog tags')
 
     parser.add_option_group(attack_group)
 
@@ -148,7 +151,10 @@ commands:
             mime_type=options.mime_type,
             csv_filename=options.csv_filename,
             tpr=options.tpr,
-            rps=options.rps
+            rps=options.rps,
+            dog_api_key=options.dog_api_key,
+            dog_app_key=options.dog_app_key,
+            dog_tags=options.dog_tags
         )
 
         bees.attack(options.url, options.number, options.concurrent, **additional_options)

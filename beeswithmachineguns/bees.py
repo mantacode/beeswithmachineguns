@@ -25,6 +25,8 @@ THE SOFTWARE.
 """
 
 from multiprocessing import Pool
+from dogapi import dog_http_api as api
+
 import os
 import re
 import socket
@@ -381,45 +383,48 @@ def _print_results(summarized_results):
     """
     Print summarized load-testing results.
     """
+
+    results = []
     if summarized_results['exception_bees']:
-        print '     %i of your bees didn\'t make it to the action. They might be taking a little longer than normal to find their machine guns, or may have been terminated without using "bees down".' % summarized_results['num_exception_bees']
+        results.append('     %i of your bees didn\'t make it to the action. They might be taking a little longer than normal to find their machine guns, or may have been terminated without using "bees down".' % summarized_results['num_exception_bees'])
 
     if summarized_results['timeout_bees']:
-        print '     Target timed out without fully responding to %i bees.' % summarized_results['num_timeout_bees']
+        results.append('     Target timed out without fully responding to %i bees.' % summarized_results['num_timeout_bees'])
 
     if summarized_results['num_complete_bees'] == 0:
-        print '     No bees completed the mission. Apparently your bees are peace-loving hippies.'
-        return
+        results.append('     No bees completed the mission. Apparently your bees are peace-loving hippies.')
+        return results
 
-    print '     Complete requests:\t\t%i' % summarized_results['total_complete_requests']
+    results.append('     Complete requests:\t\t%i' % summarized_results['total_complete_requests'])
 
-    print '     Failed requests:\t\t%i' % summarized_results['total_failed_requests']
+    results.append('     Failed requests:\t\t%i' % summarized_results['total_failed_requests'])
 
-    print '     Requests per second:\t%f [#/sec] (mean of bees)' % summarized_results['mean_requests']
+    results.append('     Requests per second:\t%f [#/sec] (mean of bees)' % summarized_results['mean_requests'])
     if 'rps_bounds' in summarized_results and summarized_results['rps_bounds'] is not None:
-        print '     Requests per second:\t%f [#/sec] (upper bounds)' % summarized_results['rps_bounds']
+        results.append('     Requests per second:\t%f [#/sec] (upper bounds)' % summarized_results['rps_bounds'])
 
-    print '     Time per request:\t\t%f [ms] (mean of bees)' % summarized_results['mean_response']
+    results.append('     Time per request:\t\t%f [ms] (mean of bees)' % summarized_results['mean_response'])
     if 'tpr_bounds' in summarized_results and summarized_results['tpr_bounds'] is not None:
-        print '     Time per request:\t\t%f [ms] (lower bounds)' % summarized_results['tpr_bounds']
+        results.append('     Time per request:\t\t%f [ms] (lower bounds)' % summarized_results['tpr_bounds'])
 
-    print '     50%% responses faster than:\t%f [ms]' % summarized_results['request_time_cdf'][49]
-    print '     90%% responses faster than:\t%f [ms]' % summarized_results['request_time_cdf'][89]
+    results.append('     50%% responses faster than:\t%f [ms]' % summarized_results['request_time_cdf'][49])
+    results.append('     90%% responses faster than:\t%f [ms]' % summarized_results['request_time_cdf'][89])
 
     if 'performance_accepted' in summarized_results:
-        print '     Performance check:\t\t%s' % summarized_results['performance_accepted']
+        results.append('     Performance check:\t\t%s' % summarized_results['performance_accepted'])
 
     if summarized_results['mean_response'] < 500:
-        print 'Mission Assessment: Target crushed bee offensive.'
+        results.append('Mission Assessment: Target crushed bee offensive.')
     elif summarized_results['mean_response'] < 1000:
-        print 'Mission Assessment: Target successfully fended off the swarm.'
+        results.append('Mission Assessment: Target successfully fended off the swarm.')
     elif summarized_results['mean_response'] < 1500:
-        print 'Mission Assessment: Target wounded, but operational.'
+        results.append('Mission Assessment: Target wounded, but operational.')
     elif summarized_results['mean_response'] < 2000:
-        print 'Mission Assessment: Target severely compromised.'
+        results.append('Mission Assessment: Target severely compromised.')
     else:
-        print 'Mission Assessment: Swarm annihilated target.'
-
+        results.append('Mission Assessment: Swarm annihilated target.')
+    print "\n".join(results)
+    return results
 
 def attack(url, n, c, **options):
     """
@@ -430,6 +435,12 @@ def attack(url, n, c, **options):
     csv_filename = options.get("csv_filename", '')
     cookies = options.get('cookies', '')
     post_file = options.get('post_file', '')
+
+    dog_tags = []
+    if options.get('dog_tags', ''):
+        dog_tags=options['dog_tags'].split(',')
+    api.api_key = options.get('dog_api_key', '')
+    api.application_key = options.get('dog_app_key', '')
 
     if csv_filename:
         try:
@@ -469,7 +480,11 @@ def attack(url, n, c, **options):
     requests_per_instance = int(float(n) / instance_count)
     connections_per_instance = int(float(c) / instance_count)
 
-    print 'Each of %i bees will fire %s rounds, %s at a time.' % (instance_count, requests_per_instance, connections_per_instance)
+    msg = 'Each of %i bees will fire %s rounds, %s at a time.' % (instance_count, requests_per_instance, connections_per_instance)
+    print msg
+    if options.get('dog_app_key', ''):
+        msg = '%s url=(%s)' % (msg, url)
+        api.event_with_response('bees attack', msg, source_type_name='bees', tags=dog_tags)
 
     params = []
 
@@ -487,7 +502,10 @@ def attack(url, n, c, **options):
             'post_file': options.get('post_file'),
             'mime_type': options.get('mime_type', ''),
             'tpr': options.get('tpr'),
-            'rps': options.get('rps')
+            'rps': options.get('rps'),
+            'dog_api_key': options.get('dog_api_key'),
+            'dog_app_key': options.get('dog_app_key'),
+            'dog_tags': options.get('dog_tags')
         }
         if instance.subnet_id == None:
             kwargs['instance_name'] = instance.public_dns_name
@@ -529,7 +547,9 @@ def attack(url, n, c, **options):
 
     summarized_results = _summarize_results(results, params, csv_filename)
     print 'Offensive complete.'
-    _print_results(summarized_results)
+    results = _print_results(summarized_results)
+    msg = "\n".join(results) + "\n"
+    api.event_with_response('bees attack (results)', msg, source_type_name='bees', tags=dog_tags)
 
     print 'The swarm is awaiting new orders.'
 
