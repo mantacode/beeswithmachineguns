@@ -39,6 +39,7 @@ import random
 
 import boto
 import boto.ec2
+import boto.ec2.networkinterface
 import paramiko
 
 STATE_FILENAME = os.path.expanduser('~/.bees')
@@ -99,6 +100,8 @@ def _get_security_group_ids(connection, security_group_names, subnet):
                     #print vars(group)
                     if hasattr(group, 'vpcId') and group.vpcId != None:
                         ids.append(group.id)
+                    if hasattr(group, 'vpc_id') and group.vpc_id != None:
+                        ids.append(group.id)
 
     return ids
 
@@ -135,14 +138,24 @@ def up(count, group, zone, image_id, instance_type, username, key_name, subnet):
         'max_count': count,
         'key_name': key_name,
         'instance_type': instance_type,
-        'placement': zone,
-        'subnet_id': subnet,
-        #'security_groups': [group]
+        'placement': zone
     }
-    if subnet == None:
-        run_instances_args['security_groups'] = [group]
+
+    sec_groups = [group]
+    if subnet != None:
+        sec_groups  = _get_security_group_ids(ec2_connection, [group], subnet)
+    #print sec_groups
+
+    # Need a way to tell public subnet. Hack for now!
+    if True:
+        interface = boto.ec2.networkinterface.NetworkInterfaceSpecification(subnet_id=subnet,
+                                                                            groups=sec_groups,
+                                                                            associate_public_ip_address=True)
+        interfaces = boto.ec2.networkinterface.NetworkInterfaceCollection(interface)
+        run_instances_args['network_interfaces'] = interfaces
     else:
-        run_instances_args['security_group_ids'] = _get_security_group_ids(ec2_connection, [group], subnet)
+        run_instances_args['subnet_id'] = subnet
+        run_instances_args['security_groups'] = sec_groups
 
     reservation = ec2_connection.run_instances(**run_instances_args)
 
@@ -511,6 +524,10 @@ def attack(url, n, c, **options):
             kwargs['instance_name'] = instance.public_dns_name
         else:
             kwargs['instance_name'] = instance.private_ip_address
+
+        # Need a way to tell public subnet. Hack for now!
+        kwargs['instance_name'] = instance.public_dns_name
+
         params.append(kwargs)
 
     print 'Stinging URL so it will be cached for the attack.'
